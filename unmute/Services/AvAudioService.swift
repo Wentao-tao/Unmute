@@ -72,7 +72,7 @@ public final class AvAudioService {
         let s = AVAudioSession.sharedInstance()
 
         // Record + play (speaker), allow Bluetooth headsets.
-        try s.setCategory(.playAndRecord, options: [.allowBluetooth, .defaultToSpeaker])
+        try s.setCategory(.playAndRecord, mode: .spokenAudio)
 
         // Critical: voice chat mode enables echo cancellation, noise suppression, AGC.
         try s.setMode(.voiceChat)

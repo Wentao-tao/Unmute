@@ -8,23 +8,46 @@
 import SwiftUI
 
 struct TestView: View {
-    @StateObject private var vm = TestViewModel()
+    @State private var vm = TestViewModel()
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text(vm.state)
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Live Captions").font(.headline)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(
+                        vm.renderedTranscript
+                    )
+                    .font(.title)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                   
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: .infinity)
 
             HStack {
-                Button("Record 5s") { vm.record(seconds: 5) }
-                Button("Play") { vm.play() }
-                Button("Stop") { vm.stopPlayback() }
-            }
+                if vm.isRunning {
+                    Button("Stop") {
+                        Task {
+                            do { try await vm.stop() } catch {
+                                print(error)
+                            }
 
-            if let url = vm.lastFileURL {
-                Text("Saved: \(url.lastPathComponent)")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Button("Start") {
+                        Task {
+                            do { try await vm.start() } catch {
+                                print(error)
+                            }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+
             }
         }
         .padding()
