@@ -8,19 +8,28 @@
 import SwiftUI
 
 struct TestView: View {
-    @State private var vm = TestViewModel()
+    @State private var vm = OnlineViewModel()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Live Captions").font(.headline)
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(
-                        vm.renderedTranscript
-                    )
-                    .font(.title)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                   
+
+                    ForEach(
+                        Array(vm.finalLines.textLines.enumerated()),
+                        id: \.offset
+                    ) { index, n in
+                        HStack {
+                            Text(vm.finalLines.speakers[index])
+                                .padding()
+                            Text(n)
+                                .padding()
+                        }
+
+                    }
+                    Text(vm.partialLine)
+                        .padding()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -29,20 +38,13 @@ struct TestView: View {
             HStack {
                 if vm.isRunning {
                     Button("Stop") {
-                        Task {
-                            do { try await vm.stop() } catch {
-                                print(error)
-                            }
-
-                        }
+                        vm.stop()
                     }
                     .buttonStyle(.borderedProminent)
                 } else {
                     Button("Start") {
                         Task {
-                            do { try await vm.start() } catch {
-                                print(error)
-                            }
+                            await vm.start()
                         }
                     }
                     .buttonStyle(.borderedProminent)
