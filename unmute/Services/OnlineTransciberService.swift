@@ -33,7 +33,7 @@ final class OnlineTransciberService {
     
     /// Configuration dictionary for the Soniox API connection
     let config: [String: Any] = [
-        "api_key": "eabe473113f3c7c46bf0a9bb0d111cd4ad0d5bdb9f60067201c5a64fb4ae4dd0",
+        "api_key": Secrets.sonioxAPIKey,
         "model": "stt-rt-preview",
         "language_hints": ["en"],
         "enable_speaker_diarization": true,
@@ -183,6 +183,7 @@ final class OnlineTransciberService {
                 
                 // Skip empty endpoint markers for text, but keep them as signals
                 if isEndpoint && text == "<end>" {
+                    print(123)
                     // Create a special endpoint token
                     let endpointToken = Token(
                         text: "",

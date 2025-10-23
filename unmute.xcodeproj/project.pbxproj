@@ -10,9 +10,22 @@
 		3782970F2E8E1D2100C30EA9 /* unmute.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = unmute.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		37E2090A2EA9CC7C000964BA /* Exceptions for "unmute" folder in "unmute" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Secrets.swift.example,
+			);
+			target = 3782970E2E8E1D2100C30EA9 /* unmute */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		378297112E8E1D2100C30EA9 /* unmute */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				37E2090A2EA9CC7C000964BA /* Exceptions for "unmute" folder in "unmute" target */,
+			);
 			path = unmute;
 			sourceTree = "<group>";
 		};

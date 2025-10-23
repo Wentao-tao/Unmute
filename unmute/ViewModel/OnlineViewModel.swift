@@ -33,6 +33,9 @@ final class OnlineViewModel {
     
     /// Background task that streams audio chunks to the transcription service
     private var pushTask: Task<Void, Error>?
+    
+    /// Flag to track if next text should start a new line (set by endpoint detection)
+    private var shouldForceNewLine = false
 
     // MARK: - Public Methods
     
@@ -41,95 +44,17 @@ final class OnlineViewModel {
     func start() async {
         isRunning = true
         
-        // Clear previous transcription results
+        // Clear previous transcription results and state
         finalLines.clear()
         partialLine = ""
+        shouldForceNewLine = false
 
         // Configure callback to handle incoming transcription tokens
         ws.onTokens = { [weak self] finals, partials in
             guard let self else { return }
-
-            // Process finalized transcription results
-            if !finals.isEmpty {
-                // Group consecutive tokens from the same speaker within this batch
-                var currentSpeaker = -1
-                var currentText = ""
-                var shouldForceNewLine = false
-                
-                for final in finals {
-                    // Check if this is an endpoint marker
-                    if final.isEndpoint {
-                        // Save current accumulated text if any
-                        if !currentText.isEmpty {
-                            let text = currentText
-                            let speaker = currentSpeaker
-                            Task { @MainActor in
-                                self.finalLines.appendOrAdd(text: text, speaker: speaker)
-                            }
-                            currentText = ""
-                        }
-                        // Set flag to force new line for next text
-                        shouldForceNewLine = true
-                        continue
-                    }
-                    
-                    if currentSpeaker == -1 {
-                        // First token in this batch
-                        currentSpeaker = final.speaker
-                        currentText = final.text
-                    } else if currentSpeaker != final.speaker {
-                        // Speaker changed - save previous speaker's accumulated text
-                        let text = currentText
-                        let speaker = currentSpeaker
-                        let forceNewLine = shouldForceNewLine
-                        Task { @MainActor in
-                            self.finalLines.appendOrAdd(text: text, speaker: speaker, forceNewLine: forceNewLine)
-                        }
-                        shouldForceNewLine = false
-                        
-                        // Start new group
-                        currentSpeaker = final.speaker
-                        currentText = final.text
-                    } else {
-                        // Same speaker
-                        if shouldForceNewLine && !currentText.isEmpty {
-                            // Need to force new line - save current and start fresh
-                            let text = currentText
-                            let speaker = currentSpeaker
-                            Task { @MainActor in
-                                self.finalLines.appendOrAdd(text: text, speaker: speaker, forceNewLine: true)
-                            }
-                            currentText = final.text
-                            shouldForceNewLine = false
-                        } else {
-                            // Normal accumulation
-                            currentText += final.text
-                        }
-                    }
-                }
-                
-                // Save the last accumulated text from this batch
-                if !currentText.isEmpty {
-                    let text = currentText
-                    let speaker = currentSpeaker
-                    Task { @MainActor in
-                        self.finalLines.appendOrAdd(text: text, speaker: speaker)
-                    }
-                }
-
-                // Clear partial line when we get final results
-                Task { @MainActor in
-                    self.partialLine = ""
-                }
-            }
-
-            // Update partial (in-progress) transcription display
-            if !partials.isEmpty {
-                let partialText = partials.map(\.text).joined()
-                Task { @MainActor in
-                    self.partialLine = partialText
-                }
-            }
+            
+            self.processFinalTokens(finals)
+            self.updatePartialLine(partials)
         }
 
         // Connect to transcription service
@@ -199,6 +124,127 @@ final class OnlineViewModel {
         }
     }
 
+    // MARK: - Private Methods
+    
+    /// Processes finalized transcription tokens and updates the UI.
+    /// Groups consecutive tokens from the same speaker and handles endpoints.
+    /// - Parameter tokens: Array of finalized transcription tokens
+    private func processFinalTokens(_ tokens: [OnlineTransciberService.Token]) {
+        guard !tokens.isEmpty else { return }
+        
+        var currentSpeaker = -1
+        var currentText = ""
+        
+        for token in tokens {
+            if token.isEndpoint {
+                // Endpoint detected - save current text and prepare for new line
+                handleEndpointToken(currentText: &currentText, currentSpeaker: currentSpeaker)
+            } else if currentSpeaker == -1 {
+                // First token in this batch
+                currentSpeaker = token.speaker
+                currentText = token.text
+            } else if currentSpeaker != token.speaker {
+                // Speaker changed
+                handleSpeakerChange(
+                    currentText: currentText,
+                    currentSpeaker: currentSpeaker,
+                    newToken: token,
+                    newSpeaker: &currentSpeaker,
+                    newText: &currentText
+                )
+            } else {
+                // Same speaker
+                handleSameSpeakerToken(currentText: &currentText, token: token)
+            }
+        }
+        
+        // Save the last accumulated text from this batch
+        if !currentText.isEmpty {
+            saveTranscriptionLine(text: currentText, speaker: currentSpeaker, forceNewLine: false)
+        }
+        
+        // Clear partial line when we get final results
+        Task { @MainActor in
+            self.partialLine = ""
+        }
+    }
+    
+    /// Handles an endpoint token by saving current text and setting force new line flag.
+    /// - Parameters:
+    ///   - currentText: Current accumulated text (will be cleared)
+    ///   - currentSpeaker: Current speaker ID
+    private func handleEndpointToken(currentText: inout String, currentSpeaker: Int) {
+        if !currentText.isEmpty {
+            saveTranscriptionLine(text: currentText, speaker: currentSpeaker, forceNewLine: false)
+            currentText = ""
+        }
+        shouldForceNewLine = true
+    }
+    
+    /// Handles a speaker change by saving previous speaker's text and starting new group.
+    /// - Parameters:
+    ///   - currentText: Current accumulated text
+    ///   - currentSpeaker: Current speaker ID
+    ///   - newToken: New token with different speaker
+    ///   - newSpeaker: Will be set to new speaker ID
+    ///   - newText: Will be set to new token's text
+    private func handleSpeakerChange(
+        currentText: String,
+        currentSpeaker: Int,
+        newToken: OnlineTransciberService.Token,
+        newSpeaker: inout Int,
+        newText: inout String
+    ) {
+        // Save previous speaker's accumulated text
+        let forceNewLine = shouldForceNewLine
+        saveTranscriptionLine(text: currentText, speaker: currentSpeaker, forceNewLine: forceNewLine)
+        shouldForceNewLine = false
+        
+        // Start new group with new speaker
+        newSpeaker = newToken.speaker
+        newText = newToken.text
+    }
+    
+    /// Handles a token from the same speaker, either appending or starting new line.
+    /// - Parameters:
+    ///   - currentText: Current accumulated text
+    ///   - token: New token from same speaker
+    private func handleSameSpeakerToken(currentText: inout String, token: OnlineTransciberService.Token) {
+        if shouldForceNewLine {
+            // Endpoint was detected - force new line
+            if !currentText.isEmpty {
+                saveTranscriptionLine(text: currentText, speaker: token.speaker, forceNewLine: true)
+            }
+            currentText = token.text
+            shouldForceNewLine = false
+        } else {
+            // Normal accumulation - append to existing text
+            currentText += token.text
+        }
+    }
+    
+    /// Saves a transcription line to the model.
+    /// - Parameters:
+    ///   - text: Text content to save
+    ///   - speaker: Speaker ID
+    ///   - forceNewLine: Whether to force a new line even for same speaker
+    private func saveTranscriptionLine(text: String, speaker: Int, forceNewLine: Bool) {
+        Task { @MainActor in
+            self.finalLines.appendOrAdd(text: text, speaker: speaker, forceNewLine: forceNewLine)
+        }
+    }
+    
+    /// Updates the partial (in-progress) transcription display.
+    /// - Parameter tokens: Array of partial transcription tokens
+    private func updatePartialLine(_ tokens: [OnlineTransciberService.Token]) {
+        guard !tokens.isEmpty else { return }
+        
+        let partialText = tokens.map(\.text).joined()
+        Task { @MainActor in
+            self.partialLine = partialText
+        }
+    }
+    
     /// Stops the transcription session and releases all resources.
     /// Cancels audio capture and closes the WebSocket connection.
     func stop() {
