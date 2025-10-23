@@ -7,105 +7,213 @@
 
 import SwiftUI
 
+/// ViewModel that orchestrates real-time audio capture and online transcription.
+/// Manages the connection between audio input, transcription service, and UI updates.
 @Observable
 final class OnlineViewModel {
+    
+    // MARK: - Public Properties
+    
+    /// Model containing finalized transcription lines with speaker information
     var finalLines: TranscriberModel = TranscriberModel()
+    
+    /// Current partial (in-progress) transcription text
     var partialLine: String = ""
+    
+    /// Whether the transcription is currently active
     var isRunning: Bool = false
 
+    // MARK: - Private Properties
+    
+    /// WebSocket service for online transcription
     private let ws = OnlineTransciberService()
+    
+    /// Audio capture service
     private let avAduio = AvAudioService()
+    
+    /// Background task that streams audio chunks to the transcription service
     private var pushTask: Task<Void, Error>?
 
+    // MARK: - Public Methods
+    
+    /// Starts the transcription session by connecting to the service and beginning audio capture.
+    /// Sets up callback handlers for receiving transcription results.
     func start() async {
         isRunning = true
+        
+        // Clear previous transcription results
+        finalLines.clear()
+        partialLine = ""
+
+        // Configure callback to handle incoming transcription tokens
         ws.onTokens = { [weak self] finals, partials in
             guard let self else { return }
+
+            // Process finalized transcription results
             if !finals.isEmpty {
-                var text = ""
-                var speaker = ""
+                // Group consecutive tokens from the same speaker within this batch
+                var currentSpeaker = -1
+                var currentText = ""
+                var shouldForceNewLine = false
+                
                 for final in finals {
-                    if speaker == "" {
-                        speaker = final.speaker
-                    }
-                    if speaker != final.speaker {
-                        Task { @MainActor in
-                            self.finalLines.add([text: speaker])
+                    // Check if this is an endpoint marker
+                    if final.isEndpoint {
+                        // Save current accumulated text if any
+                        if !currentText.isEmpty {
+                            let text = currentText
+                            let speaker = currentSpeaker
+                            Task { @MainActor in
+                                self.finalLines.appendOrAdd(text: text, speaker: speaker)
+                            }
+                            currentText = ""
                         }
-                        text = ""
-                        speaker = final.speaker
-                        text += final.text
+                        // Set flag to force new line for next text
+                        shouldForceNewLine = true
+                        continue
+                    }
+                    
+                    if currentSpeaker == -1 {
+                        // First token in this batch
+                        currentSpeaker = final.speaker
+                        currentText = final.text
+                    } else if currentSpeaker != final.speaker {
+                        // Speaker changed - save previous speaker's accumulated text
+                        let text = currentText
+                        let speaker = currentSpeaker
+                        let forceNewLine = shouldForceNewLine
+                        Task { @MainActor in
+                            self.finalLines.appendOrAdd(text: text, speaker: speaker, forceNewLine: forceNewLine)
+                        }
+                        shouldForceNewLine = false
+                        
+                        // Start new group
+                        currentSpeaker = final.speaker
+                        currentText = final.text
                     } else {
-                        text += final.text
+                        // Same speaker
+                        if shouldForceNewLine && !currentText.isEmpty {
+                            // Need to force new line - save current and start fresh
+                            let text = currentText
+                            let speaker = currentSpeaker
+                            Task { @MainActor in
+                                self.finalLines.appendOrAdd(text: text, speaker: speaker, forceNewLine: true)
+                            }
+                            currentText = final.text
+                            shouldForceNewLine = false
+                        } else {
+                            // Normal accumulation
+                            currentText += final.text
+                        }
                     }
                 }
-                Task { @MainActor in
-                    self.finalLines.add([text: speaker])
+                
+                // Save the last accumulated text from this batch
+                if !currentText.isEmpty {
+                    let text = currentText
+                    let speaker = currentSpeaker
+                    Task { @MainActor in
+                        self.finalLines.appendOrAdd(text: text, speaker: speaker)
+                    }
                 }
 
+                // Clear partial line when we get final results
                 Task { @MainActor in
-
                     self.partialLine = ""
                 }
             }
 
+            // Update partial (in-progress) transcription display
             if !partials.isEmpty {
+                let partialText = partials.map(\.text).joined()
                 Task { @MainActor in
-                    self.partialLine = partials.map(\.text).joined()
+                    self.partialLine = partialText
                 }
             }
         }
+
+        // Connect to transcription service
         do {
             try await ws.connectAndStart()
         } catch {
-            print(error)
+            isRunning = false
+            return
         }
-       
-        sendDate()
+
+        // Begin audio capture and streaming
+        sendData()
     }
 
-    func sendDate() {
-        let frames = try! avAduio.start()
+    /// Starts audio capture and streams audio chunks to the transcription service.
+    /// Runs in a detached background task to avoid blocking the main thread.
+    func sendData() {
+        // Start audio capture
+        let frames: AsyncStream<AudioFrame>
+        do {
+            frames = try avAduio.start()
+        } catch {
+            return
+        }
+
+        // Create background task to process and send audio
         self.pushTask = Task.detached(priority: .userInitiated) { [weak self] in
-        guard let self else { return }
-        let chunkDur: Double = 0.12
-        let sr = 48_000
-        let bytesPerSample = MemoryLayout<Float>.size
-        let channels = 1
-        let chunkBytesTarget =
-            Int(Double(sr) * chunkDur) * channels * bytesPerSample
+            guard let self else { return }
 
-        var chunk = Data()
-        chunk.reserveCapacity(chunkBytesTarget * 2)
+            // Audio chunk configuration
+            let chunkDur: Double = 0.12           // 120ms chunks
+            let sr = 48_000                       // 48kHz sample rate
+            let bytesPerSample = MemoryLayout<Float>.size  // Float32 = 4 bytes
+            let channels = 1                      // Mono audio
+            let chunkBytesTarget =
+                Int(Double(sr) * chunkDur) * channels * bytesPerSample
 
-        for await f in frames {
-            try Task.checkCancellation()
-            if let ch = f.buffer.floatChannelData?.pointee {
-                let count = Int(f.buffer.frameLength) * bytesPerSample
-                let raw = UnsafeRawBufferPointer(start: ch, count: count)
-                chunk.append(contentsOf: raw)
+            var chunk = Data()
+            chunk.reserveCapacity(chunkBytesTarget * 2)
+
+            // Process incoming audio frames
+            for await f in frames {
+                try Task.checkCancellation()
+
+                // Extract raw Float32 audio data from buffer
+                if let ch = f.buffer.floatChannelData?.pointee {
+                    let count = Int(f.buffer.frameLength) * bytesPerSample
+                    let raw = UnsafeRawBufferPointer(start: ch, count: count)
+                    chunk.append(contentsOf: raw)
+                }
+
+                // Send chunk when it reaches target size
+                if chunk.count >= chunkBytesTarget {
+                    self.ws.sendAudioChunk(chunk)
+                    chunk.removeAll(keepingCapacity: true)
+                }
             }
 
-            if chunk.count >= chunkBytesTarget {
+            // Send any remaining audio data
+            if !chunk.isEmpty {
                 self.ws.sendAudioChunk(chunk)
-                chunk.removeAll(keepingCapacity: true)
             }
 
+            // Finalize transcription and close connection
+            self.ws.finalize()
+            self.ws.close()
         }
-        if !chunk.isEmpty { self.ws.sendAudioChunk(chunk) }
-        self.ws.finalize()
-        self.ws.close()
-
     }
 
-    }
-    
+    /// Stops the transcription session and releases all resources.
+    /// Cancels audio capture and closes the WebSocket connection.
     func stop() {
         isRunning = false
-        pushTask?.cancel()
-        pushTask = nil
         avAduio.stop()
-        ws.finalize()
-        ws.close()
+
+        // Cancel the audio streaming task if it exists
+        // The task will handle finalize() and close() in its cleanup
+        if let task = pushTask {
+            task.cancel()
+            pushTask = nil
+        } else {
+            // If no task exists, manually finalize and close
+            ws.finalize()
+            ws.close()
+        }
     }
 }
