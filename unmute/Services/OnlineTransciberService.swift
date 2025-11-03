@@ -19,6 +19,8 @@ final class OnlineTransciberService {
         let isFinal: Bool       // Whether this is a final or partial result
         let speaker: Int        // Speaker ID (1, 2, 3, etc.) or -1 if unknown
         let isEndpoint: Bool    // Whether this token marks an endpoint (pause/sentence boundary)
+        let start_ms: Int
+        let end_ms: Int
     }
 
     // MARK: - Public Properties
@@ -42,7 +44,7 @@ final class OnlineTransciberService {
         """,
         "enable_endpoint_detection": true,
         "audio_format": "pcm_f32le",
-        "sample_rate": 48000,
+        "sample_rate": 16000,
         "num_channels": 1,
     ]
 
@@ -183,13 +185,14 @@ final class OnlineTransciberService {
                 
                 // Skip empty endpoint markers for text, but keep them as signals
                 if isEndpoint && text == "<end>" {
-                    print(123)
                     // Create a special endpoint token
                     let endpointToken = Token(
                         text: "",
                         isFinal: true,
                         speaker: -1,
-                        isEndpoint: true
+                        isEndpoint: true,
+                        start_ms: -1,
+                        end_ms : -1
                     )
                     finals.append(endpointToken)
                     continue
@@ -215,7 +218,9 @@ final class OnlineTransciberService {
                     text: text,
                     isFinal: (t["is_final"] as? Bool) ?? false,
                     speaker: speakerValue,
-                    isEndpoint: false
+                    isEndpoint: false,
+                    start_ms: (t["start_ms"] as? Int) ?? 0,
+                    end_ms : (t["end_ms"] as? Int) ?? 0
                 )
 
                 // Categorize as final or partial result

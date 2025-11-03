@@ -11,16 +11,30 @@ import SwiftUI
 /// Displays transcription results with speaker labels and provides start/stop controls.
 struct TestView: View {
     @State private var vm = OnlineViewModel()
+    @State private var speakerName = ""
+    @State private var showingNameInput = false
+    @State private var selectedTime: Time_sx?
+    @State private var selectedSpeakerId: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
 
             // MARK: - Header with Status Indicator
-            
+
             HStack {
                 Text("transcriber").font(.headline)
 
                 Spacer()
+
+                // Clear speaker data button
+                Button(action: {
+                    clearSpeakerData()
+                }) {
+                    Image(systemName: "trash")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+                .help("clear speaker data")
 
                 // Show running status with colored indicator
                 if vm.isRunning {
@@ -47,7 +61,7 @@ struct TestView: View {
             Divider()
 
             // MARK: - Transcription Display Area
-            
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
 
@@ -60,10 +74,14 @@ struct TestView: View {
                             HStack(alignment: .top, spacing: 12) {
 
                                 // Speaker label badge
-                                Text(
+                                Button(
                                     "speaker "
-                                        + String(vm.finalLines.speakers[index])
-                                )
+                                        + String(vm.finalLines.name[index])
+                                ) {
+                                    selectedTime = vm.finalLines.times[index]
+                                    selectedSpeakerId = vm.finalLines.speakers[index]
+                                    showingNameInput = true
+                                }
                                 .font(.caption)
                                 .fontWeight(.semibold)
                                 .padding(.horizontal, 8)
@@ -129,7 +147,7 @@ struct TestView: View {
             .cornerRadius(8)
 
             // MARK: - Control Buttons
-            
+
             HStack(spacing: 16) {
                 if vm.isRunning {
                     // Stop button with activity indicator
@@ -169,6 +187,57 @@ struct TestView: View {
             .padding(.top, 8)
         }
         .padding()
+        .sheet(isPresented: $showingNameInput) {
+            VStack(spacing: 24) {
+                Text("label")
+                    .font(.headline)
+                    .padding(.top)
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("name")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    TextField("for example frank", text: $speakerName)
+                        .textFieldStyle(.roundedBorder)
+                        .autocapitalization(.words)
+                }
+                .padding(.horizontal)
+                
+                HStack(spacing: 16) {
+                    Button("cancel") {
+                        showingNameInput = false
+                        speakerName = ""
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
+                    
+                    Button("go") {
+                        if let time = selectedTime,
+                           let speakerId = selectedSpeakerId,
+                           !speakerName.trimmingCharacters(in: .whitespaces).isEmpty {
+                            vm.enrol(
+                                name: speakerName.trimmingCharacters(in: .whitespaces),
+                                time: time,
+                                id: speakerId
+                            )
+                        }
+                        showingNameInput = false
+                        speakerName = ""
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(speakerName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .frame(maxWidth: .infinity)
+                }
+                .padding(.horizontal)
+                .padding(.bottom)
+            }
+            .presentationDetents([.height(200)])
+        }
+    }
+    
+    private func clearSpeakerData() {
+        VoiceService.shared.registry.clear()
     }
 }
 

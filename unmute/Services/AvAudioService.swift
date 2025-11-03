@@ -72,13 +72,13 @@ public final class AvAudioService {
         let s = AVAudioSession.sharedInstance()
 
         // Record + play (speaker), allow Bluetooth headsets.
-        try s.setCategory(.playAndRecord, mode: .spokenAudio)
+        try s.setCategory(.playAndRecord)
 
         // Critical: voice chat mode enables echo cancellation, noise suppression, AGC.
         try s.setMode(.voiceChat)
 
         // Prefer 48 kHz
-        try? s.setPreferredSampleRate(48_000)
+        try? s.setPreferredSampleRate(16_000)
         
         // Prefer mono
         try? s.setPreferredInputNumberOfChannels(1)
@@ -100,7 +100,7 @@ public final class AvAudioService {
         // Our unified target format: 48 kHz / mono / Float32 (non-interleaved).
         guard let outFmt = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
-            sampleRate: 48_000,
+            sampleRate: 16_000,
             channels: 1,
             interleaved: false)
         else {
@@ -143,6 +143,8 @@ public final class AvAudioService {
 
             // Push the converted frame into the async stream.
             _ = self.continuation?.yield(AudioFrame(buffer: outBuf, timestamp: time))
+            VoiceService.shared.audioStore.append(buffer: outBuf)
+
         }
 
         engine.prepare()

@@ -9,10 +9,13 @@ import SwiftUI
 
 struct ContentView: View {
     var body: some View {
-        VStack {
-            TestView()
+        NavigationStack {
+            VStack {
+                TestView()
+            }
+            .padding()
+            .navigationTitle("Speech Recognition")
         }
-        .padding()
     }
 }
 
