@@ -6,8 +6,11 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct ContentView: View {
+    @Environment(\.modelContext) private var modelContext
+    
     var body: some View {
         NavigationStack {
             VStack {
@@ -16,9 +19,20 @@ struct ContentView: View {
             .padding()
             .navigationTitle("Speech Recognition")
         }
+        .onAppear {
+            Task { @MainActor in
+                // Initialize VoiceService with SwiftData context
+                VoiceService.shared.initializeRegistry(with: modelContext)
+            }
+        }
     }
 }
 
 #Preview {
     ContentView()
+        .modelContainer(for: [
+            SpeakerProfile.self,
+            TranscriptionSession.self,
+            TranscriptionLine.self
+        ])
 }

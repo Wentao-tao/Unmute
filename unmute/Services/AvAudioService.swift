@@ -35,11 +35,21 @@ public final class AvAudioService {
     // MARK: - Public API
 
     /// Start capturing and return an async stream of ~20 ms frames.
-    public func start() throws -> AsyncStream<AudioFrame> {
+    /// - Note: Audio session and engine setup now runs asynchronously to prevent UI blocking
+    public func start() async throws -> AsyncStream<AudioFrame> {
         guard !isRunning else { return makeStream() }
 
-        try setupAudioSession()
-        try configureEngineAndTap()
+        let startTime = Date()
+        
+        // Run audio setup on a background thread to avoid blocking main thread
+        try await Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self else { throw NSError(domain: "AvAudioService", code: -1) }
+            try self.setupAudioSession()
+            try self.configureEngineAndTap()
+        }.value
+        
+        let setupTime = Date().timeIntervalSince(startTime) * 1000
+        
         isRunning = true
         return makeStream()
     }

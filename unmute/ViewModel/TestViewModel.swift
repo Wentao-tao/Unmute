@@ -25,7 +25,8 @@ final class TestViewModel {
         isRunning = true
         try await transcriber.setUpTranscriber()
         
-        for await input in try audio.start()  {
+        // Audio setup now runs asynchronously to prevent UI blocking
+        for await input in try await audio.start()  {
             try await self.transcriber.streamAudioToTranscriber(input.buffer)
         }
         

@@ -6,51 +6,108 @@
 //
 
 import Foundation
-import AVFoundation
+@preconcurrency import AVFoundation
 import onnxruntime_objc
 
 /// Extracts speaker embeddings using ONNX Runtime and SpeechBrain ECAPA-TDNN model
-final class ONNXEmbeddingExtractor {
+/// - Note: Marked as @unchecked Sendable because thread safety is manually ensured via sessionQueue
+final class ONNXEmbeddingExtractor: @unchecked Sendable {
     private var env: ORTEnv?
     private var session: ORTSession?
     private let fbankExtractor = Fbank80Extractor()
     private let sessionQueue = DispatchQueue(label: "onnx.inference", qos: .userInitiated)
+    private var isInitialized = false
+    private var initializationTask: Task<Void, Never>?
     
     init() {
-        setupSession()
+        // Model loading moved to lazy initialization to prevent blocking main thread
     }
     
-    /// Initialize ONNX Runtime session with the model
-    private func setupSession() {
-        do {
-            // Create ONNX Runtime environment
-            env = try ORTEnv(loggingLevel: ORTLoggingLevel.warning)
-            
-            guard let env = env else {
-                return
+    /// Ensure ONNX model is initialized (lazy loading, only once)
+    /// - Note: Safe to call multiple times - initialization happens only once
+    private func ensureInitialized() async {
+        // If there's an ongoing initialization, wait for it
+        if let task = initializationTask {
+            await task.value
+            return
+        }
+        
+        // If already initialized, return immediately
+        guard !isInitialized else { return }
+        
+        // Create and cache the initialization task
+        let task = Task {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                self.sessionQueue.async { [weak self] in
+                    guard let self = self, !self.isInitialized else {
+                        continuation.resume()
+                        return
+                    }
+                    
+                    do {
+                        // Create ONNX Runtime environment
+                        self.env = try ORTEnv(loggingLevel: ORTLoggingLevel.warning)
+                        
+                        guard let env = self.env else {
+                            print("❌ ONNX: Failed to create environment")
+                            continuation.resume()
+                            return
+                        }
+                        
+                        // Load model file
+                        guard let modelPath = Bundle.main.path(forResource: "ecapa_tdnn_embedding", ofType: "onnx") else {
+                            print("❌ ONNX: Model file not found")
+                            continuation.resume()
+                            return
+                        }
+                        
+                        // Configure session options
+                        let options = try ORTSessionOptions()
+                        try options.setIntraOpNumThreads(2)
+                        
+                        // Create inference session (this is the heavy operation)
+                        self.session = try ORTSession(env: env, modelPath: modelPath, sessionOptions: options)
+                        self.isInitialized = true
+                    } catch {
+                        print("❌ ONNX initialization failed: \(error)")
+                    }
+                    
+                    continuation.resume()
+                }
             }
-            
-            // Load model file
-            guard let modelPath = Bundle.main.path(forResource: "ecapa_tdnn_embedding", ofType: "onnx") else {
-                return
+        }
+        
+        initializationTask = task
+        await task.value
+    }
+    
+    /// Extract speaker embedding from audio buffer asynchronously
+    /// - Parameter buffer: 16kHz mono audio buffer
+    /// - Returns: L2-normalized embedding vector, or nil if extraction fails
+    /// - Note: Runs on background queue to avoid blocking main thread
+    func embed(from buffer: AVAudioPCMBuffer) async -> [Float]? {
+        // Ensure model is initialized (lazy loading on first use)
+        await ensureInitialized()
+        
+        return await withCheckedContinuation { continuation in
+            sessionQueue.async { [weak self] in
+                guard let self = self else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                let result = self.performInference(buffer: buffer)
+                continuation.resume(returning: result)
             }
-            
-            // Configure session options
-            let options = try ORTSessionOptions()
-            try options.setIntraOpNumThreads(2)
-            
-            // Create inference session
-            session = try ORTSession(env: env, modelPath: modelPath, sessionOptions: options)
-            
-        } catch {
-            // Silent failure - session will be nil and embed() will return nil
         }
     }
     
-    /// Extract speaker embedding from audio buffer
+    /// Performs synchronous inference on background queue
     /// - Parameter buffer: 16kHz mono audio buffer
     /// - Returns: L2-normalized embedding vector, or nil if extraction fails
-    func embed(from buffer: AVAudioPCMBuffer) -> [Float]? {
+    private func performInference(buffer: AVAudioPCMBuffer) -> [Float]? {
+        let start = Date()
+        
         guard let session = session else {
             return nil
         }
@@ -59,6 +116,9 @@ final class ONNXEmbeddingExtractor {
         guard let fbank = fbankExtractor?.makeFbank(from16kMono: buffer) else {
             return nil
         }
+        
+        let fbankTime = Date().timeIntervalSince(start) * 1000
+        let inferenceStart = Date()
         
         let nMels = fbank.count       // 80
         let nFrames = fbank[0].count  // Dynamic length

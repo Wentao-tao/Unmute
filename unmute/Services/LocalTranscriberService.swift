@@ -68,7 +68,7 @@ final class LocalTranscriberService {
     func setUpTranscriber() async throws {
         let granted = await requestSpeechPermissionAsync()
         if !granted {
-            print("need to authorize")
+            print("❌ Speech recognition authorization required")
             return
         }
 
@@ -91,7 +91,7 @@ final class LocalTranscriberService {
                 locale: LocalTranscriberService.locale
             )
         } catch let error as TranscriptionError {
-            print(error)
+            print("❌ Transcription error: \(error)")
             return
         }
 
@@ -121,7 +121,7 @@ final class LocalTranscriberService {
                     }
                 }
             } catch {
-                print("speech recognition failed")
+                print("❌ Speech recognition failed: \(error)")
             }
         }
 

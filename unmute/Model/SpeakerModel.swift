@@ -7,27 +7,32 @@
 
 import AVFoundation
 import Accelerate
+import SwiftData
 
 /// Represents a speaker's voice profile with their name and voice embeddings
-struct SpeakerProfile: Codable {
+@Model
+final class SpeakerProfile {
     var name: String
     var embeddings: [[Float]]
+    
+    init(name: String, embeddings: [[Float]] = []) {
+        self.name = name
+        self.embeddings = embeddings
+    }
 }
 
 /// Manages speaker profiles and provides enrollment and identification capabilities
-final class SpeakerRegistry {
-    private(set) var profiles: [SpeakerProfile] = []
-    private let url: URL
+@MainActor
+final class SpeakerRegistry: ObservableObject {
+    private let modelContext: ModelContext
+    @Published private(set) var profiles: [SpeakerProfile] = []
+    private var saveTask: Task<Void, Never>?
 
-    /// Initialize the speaker registry with persistent storage
-    /// - Parameter filename: The JSON file name for storing speaker profiles
-    init(filename: String = "speakers.json") {
-        let doc = FileManager.default.urls(
-            for: .documentDirectory,
-            in: .userDomainMask
-        ).first!
-        self.url = doc.appendingPathComponent(filename)
-        load()
+    /// Initialize the speaker registry with SwiftData context
+    /// - Parameter modelContext: SwiftData model context
+    init(modelContext: ModelContext) {
+        self.modelContext = modelContext
+        loadProfiles()
     }
 
     /// Enroll a speaker with a new voice embedding (no validation)
@@ -35,10 +40,12 @@ final class SpeakerRegistry {
     ///   - name: Speaker's name
     ///   - embedding: Voice embedding vector
     func enroll(name: String, embedding: [Float]) {
-        if let idx = profiles.firstIndex(where: { $0.name == name }) {
-            profiles[idx].embeddings.append(embedding)
+        if let profile = profiles.first(where: { $0.name == name }) {
+            profile.embeddings.append(embedding)
         } else {
-            profiles.append(SpeakerProfile(name: name, embeddings: [embedding]))
+            let newProfile = SpeakerProfile(name: name, embeddings: [embedding])
+            modelContext.insert(newProfile)
+            profiles.append(newProfile)
         }
         save()
     }
@@ -54,9 +61,7 @@ final class SpeakerRegistry {
         embedding: [Float],
         minSimilarity: Float = 0.85
     ) -> Bool {
-        if let idx = profiles.firstIndex(where: { $0.name == name }) {
-            let profile = profiles[idx]
-            
+        if let profile = profiles.first(where: { $0.name == name }) {
             // Calculate similarity between new sample and all existing samples
             let similarities = profile.embeddings.map { cosine($0, embedding) }
             let avgSimilarity = similarities.reduce(0, +) / Float(similarities.count)
@@ -64,7 +69,7 @@ final class SpeakerRegistry {
             
             // Core validation: both average and minimum similarity must meet threshold
             if avgSimilarity >= minSimilarity && minSim >= minSimilarity - 0.05 {
-                profiles[idx].embeddings.append(embedding)
+                profile.embeddings.append(embedding)
                 save()
                 return true
             } else {
@@ -73,7 +78,9 @@ final class SpeakerRegistry {
             }
         } else {
             // First enrollment - no existing samples to compare against
-            profiles.append(SpeakerProfile(name: name, embeddings: [embedding]))
+            let newProfile = SpeakerProfile(name: name, embeddings: [embedding])
+            modelContext.insert(newProfile)
+            profiles.append(newProfile)
             save()
             return true
         }
@@ -84,7 +91,7 @@ final class SpeakerRegistry {
     ///   - embedding: Voice embedding vector to identify
     ///   - threshold: Minimum similarity score required for positive identification (default 0.80)
     /// - Returns: Tuple of (speaker name, similarity score) if identified, nil otherwise
-    func identify(embedding: [Float], threshold: Float = 0.80) -> (
+    func identify(embedding: [Float], threshold: Float = 0.83) -> (
         name: String, score: Float
     )? {
         guard !profiles.isEmpty else {
@@ -110,8 +117,11 @@ final class SpeakerRegistry {
     
     /// Clear all speaker profiles from registry
     func clear() {
+        for profile in profiles {
+            modelContext.delete(profile)
+        }
         profiles.removeAll()
-        save()
+        saveImmediately()
     }
 
     /// Calculate cosine similarity between two embedding vectors
@@ -135,24 +145,42 @@ final class SpeakerRegistry {
         return denom > 0 ? dot / denom : 0
     }
 
-    /// Save speaker profiles to persistent storage
+    /// Save changes to SwiftData asynchronously with debounce
+    /// This prevents frequent disk I/O from blocking the main thread
     private func save() {
+        // Cancel previous save task (debounce)
+        saveTask?.cancel()
+        
+        // Schedule new save with 0.5 second delay
+        saveTask = Task {
+            // Wait 500ms to batch multiple changes
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
+            
+            // Perform save asynchronously
+            do {
+                try self.modelContext.save()
+            } catch {
+                print("❌ Speaker Registry: Save failed: \(error)")
+            }
+        }
+    }
+    
+    /// Force immediate save (for critical operations like clear)
+    private func saveImmediately() {
+        saveTask?.cancel()
         do {
-            let data = try JSONEncoder().encode(profiles)
-            try data.write(to: url)
+            try modelContext.save()
         } catch {
-            // Silently fail - persistence is not critical for runtime operation
+            print("❌ Speaker Registry: Immediate save failed: \(error)")
         }
     }
 
-    /// Load speaker profiles from persistent storage
-    private func load() {
+    /// Load speaker profiles from SwiftData
+    private func loadProfiles() {
+        let descriptor = FetchDescriptor<SpeakerProfile>()
         do {
-            let data = try Data(contentsOf: url)
-            profiles = try JSONDecoder().decode(
-                [SpeakerProfile].self,
-                from: data
-            )
+            profiles = try modelContext.fetch(descriptor)
         } catch {
             profiles = []
         }

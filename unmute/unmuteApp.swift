@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 @main
 struct unmuteApp: App {
@@ -13,5 +14,10 @@ struct unmuteApp: App {
         WindowGroup {
             ContentView()
         }
+        .modelContainer(for: [
+            SpeakerProfile.self,
+            TranscriptionSession.self,
+            TranscriptionLine.self
+        ])
     }
 }

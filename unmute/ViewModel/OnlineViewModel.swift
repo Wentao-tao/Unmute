@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 /// ViewModel that orchestrates real-time audio capture and online transcription.
 /// Manages the connection between audio input, transcription service, and UI updates.
@@ -25,14 +26,11 @@ final class OnlineViewModel {
 
     // MARK: - Private Properties
 
-    /// WebSocket service for online transcription
-    private let ws = OnlineTransciberService()
+    /// WebSocket service for online transcription (lazy loaded)
+    private var ws: OnlineTransciberService?
 
-    /// Audio capture service
-    private let avAduio = AvAudioService()
-
-    /// Voice identification service
-    private let voiceIdentifier = VoiceService.shared
+    /// Audio capture service (lazy loaded to prevent audio engine conflicts on init)
+    private var avAduio: AvAudioService?
     
     /// Background task that streams audio chunks to the transcription service
     private var pushTask: Task<Void, Error>?
@@ -74,6 +72,21 @@ final class OnlineViewModel {
         // Clear speaker mappings for new session
         speakerMapping.removeAll()
         autoLearnEnabled.removeAll()
+        pendingEnrollments.removeAll()
+        learnedSegments.removeAll()
+
+        // Initialize services lazily (prevents audio engine conflicts on view init)
+        if ws == nil {
+            ws = OnlineTransciberService()
+        }
+        if avAduio == nil {
+            avAduio = AvAudioService()
+        }
+        
+        guard let ws = ws else {
+            isRunning = false
+            return
+        }
 
         // Configure callback to handle incoming transcription tokens
         ws.onTokens = { [weak self] finals, partials in
@@ -108,20 +121,25 @@ final class OnlineViewModel {
         let totalDuration = timeRanges.reduce(0) { $0 + ($1.1 - $1.0) }
         
         // Check if we have at least 5 seconds (5000ms) of audio
-        if totalDuration >= 5000 {
-            let success = voiceIdentifier.enrollMultipleSegments(
-                name: name,
-                timeRanges: timeRanges
-            )
-            
-            if success {
-                speakerMapping[id] = name
-                autoLearnEnabled.insert(id)
-                markSegmentsAsLearned(speakerId: id, timeRanges: timeRanges)
-                finalLines.updateName(name: name, id: id)
-                pendingEnrollments.removeValue(forKey: id)
+            if totalDuration >= 5000 {
+                Task {
+                    let success = await VoiceService.shared.enrollMultipleSegments(
+                        name: name,
+                        timeRanges: timeRanges
+                    )
+                
+                    if success {
+                    await MainActor.run {
+                        self.speakerMapping[id] = name
+                        self.autoLearnEnabled.insert(id)
+                        self.markSegmentsAsLearned(speakerId: id, timeRanges: timeRanges)
+                        self.finalLines.updateName(name: name, id: id)
+                        self.pendingEnrollments.removeValue(forKey: id)
+                    }
+                } else {
+                    print("❌ Failed to enroll speaker '\(name)'")
+                }
             }
-            
         } else {
             // Not enough audio yet, mark as pending enrollment
             pendingEnrollments[id] = PendingEnrollment(
@@ -135,17 +153,18 @@ final class OnlineViewModel {
     /// Starts audio capture and streams audio chunks to the transcription service.
     /// Runs in a detached background task to avoid blocking the main thread.
     func sendData() {
-        // Start audio capture
-        let frames: AsyncStream<AudioFrame>
-        do {
-            frames = try avAduio.start()
-        } catch {
-            return
-        }
-
         // Create background task to process and send audio
         self.pushTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
+            guard let avAduio = self.avAduio else { return }
+            
+            // Start audio capture (audio setup now runs asynchronously to prevent UI blocking)
+            let frames: AsyncStream<AudioFrame>
+            do {
+                frames = try await avAduio.start()
+            } catch {
+                return
+            }
 
             // Audio chunk configuration
             let chunkDur: Double = 0.12  // 120ms chunks
@@ -171,19 +190,19 @@ final class OnlineViewModel {
 
                 // Send chunk when it reaches target size
                 if chunk.count >= chunkBytesTarget {
-                    self.ws.sendAudioChunk(chunk)
+                    self.ws?.sendAudioChunk(chunk)
                     chunk.removeAll(keepingCapacity: true)
                 }
             }
 
             // Send any remaining audio data
             if !chunk.isEmpty {
-                self.ws.sendAudioChunk(chunk)
+                self.ws?.sendAudioChunk(chunk)
             }
 
             // Finalize transcription and close connection
-            self.ws.finalize()
-            self.ws.close()
+            self.ws?.finalize()
+            self.ws?.close()
         }
     }
 
@@ -417,26 +436,28 @@ final class OnlineViewModel {
         let totalDuration = timeRanges.reduce(0) { $0 + ($1.1 - $1.0) }
         
         // Only attempt identification if we have at least 5 seconds
-        if totalDuration >= 5000 {
-            let result = VoiceService.shared.identifyMultipleSegments(timeRanges: timeRanges)
+            if totalDuration >= 5000 {
+                let result = await VoiceService.shared.identifyMultipleSegments(timeRanges: timeRanges)
             
-            await MainActor.run {
-            if let index = currentIndex,
-               index < self.finalLines.name.count,
-               let (identifiedName, score) = result,
-               score >= 0.80 {
-                    
-                    // Check for mapping conflicts (same name mapped to different speaker ID)
-                    let hasConflict = self.speakerMapping.contains { (id, name) in
-                        name == identifiedName && id != speaker
-                    }
-                    
-                    if !hasConflict {
-                        self.finalLines.name[index] = identifiedName
-                        self.speakerMapping[speaker] = identifiedName
-                        self.autoLearnEnabled.insert(speaker)
-                        self.markSegmentsAsLearned(speakerId: speaker, timeRanges: timeRanges)
-                        self.finalLines.updateName(name: identifiedName, id: speaker)
+            _ = await MainActor.run {
+                if let (identifiedName, score) = result {
+                    if score >= 0.80 {
+                        if let index = currentIndex, index < self.finalLines.name.count {
+                            // Check for mapping conflicts (same name mapped to different speaker ID)
+                            let hasConflict = self.speakerMapping.contains { (id, name) in
+                                name == identifiedName && id != speaker
+                            }
+                            
+                            if !hasConflict {
+                                self.finalLines.name[index] = identifiedName
+                                self.speakerMapping[speaker] = identifiedName
+                                self.autoLearnEnabled.insert(speaker)
+                                self.markSegmentsAsLearned(speakerId: speaker, timeRanges: timeRanges)
+                                self.finalLines.updateName(name: identifiedName, id: speaker)
+                            } else {
+                                print("⚠️ Identification conflict: '\(identifiedName)' already mapped to different speaker")
+                            }
+                        }
                     }
                 }
             }
@@ -453,7 +474,7 @@ final class OnlineViewModel {
         
         // Complete enrollment if we now have enough audio
         if totalDuration >= 5000 {
-            let success = VoiceService.shared.enrollMultipleSegments(
+            let success = await VoiceService.shared.enrollMultipleSegments(
                 name: pending.name,
                 timeRanges: timeRanges
             )
@@ -466,6 +487,8 @@ final class OnlineViewModel {
                     self.finalLines.updateName(name: pending.name, id: speaker)
                     self.pendingEnrollments.removeValue(forKey: speaker)
                 }
+            } else {
+                print("❌ Failed to complete pending enrollment for '\(pending.name)'")
             }
         }
     }
@@ -483,7 +506,7 @@ final class OnlineViewModel {
         // Only attempt learning if we have at least 5 seconds of unlearned audio
         if totalDuration >= 5000 {
             // Use validation method with threshold 0.85 (stricter than identification threshold 0.8)
-            let success = VoiceService.shared.enrollMultipleSegmentsWithValidation(
+            let success = await VoiceService.shared.enrollMultipleSegmentsWithValidation(
                 name: name,
                 timeRanges: timeRanges,
                 minSimilarity: 0.85
@@ -497,7 +520,8 @@ final class OnlineViewModel {
             } else {
                 // Quality validation failed - likely misidentification
                 // Disable auto-learning for this speaker to prevent voiceprint contamination
-                await MainActor.run {
+                print("⚠️ Auto-learning quality validation failed for speaker \(speaker) - disabling to prevent contamination")
+                _ = await MainActor.run {
                     self.autoLearnEnabled.remove(speaker)
                 }
             }
@@ -519,7 +543,7 @@ final class OnlineViewModel {
     /// Cancels audio capture and closes the WebSocket connection.
     func stop() {
         isRunning = false
-        avAduio.stop()
+        avAduio?.stop()
 
         // Cancel the audio streaming task if it exists
         // The task will handle finalize() and close() in its cleanup
@@ -528,8 +552,8 @@ final class OnlineViewModel {
             pushTask = nil
         } else {
             // If no task exists, manually finalize and close
-            ws.finalize()
-            ws.close()
+            ws?.finalize()
+            ws?.close()
         }
     }
     
@@ -575,5 +599,17 @@ final class OnlineViewModel {
             let key = "\(speakerId)_\(start)_\(end)"
             learnedSegments.insert(key)
         }
+    }
+    
+    // MARK: - Session Management
+    
+    /// Saves the current transcription session to SwiftData
+    /// - Parameters:
+    ///   - modelContext: SwiftData model context
+    ///   - title: Optional custom title for the session
+    /// - Returns: The saved TranscriptionSession
+    @MainActor
+    func saveSession(to modelContext: ModelContext, title: String = "") async -> TranscriptionSession {
+        return await finalLines.saveSession(to: modelContext, title: title)
     }
 }

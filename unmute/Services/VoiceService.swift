@@ -7,16 +7,18 @@
 
 import AVFoundation
 import Accelerate
+import SwiftData
 
 /// Extracts voice embeddings from audio buffers using ONNX model
 final class EmbeddingExtractor {
     private let onnxExtractor = ONNXEmbeddingExtractor()
     
-    /// Extract voice embedding from audio buffer
+    /// Extract voice embedding from audio buffer asynchronously
     /// - Parameter buffer: Audio buffer to process
     /// - Returns: Voice embedding vector, or nil if extraction fails
-    func embed(from buffer: AVAudioPCMBuffer) -> [Float]? {
-        return onnxExtractor.embed(from: buffer)
+    /// - Note: Runs on background queue to avoid blocking main thread
+    func embed(from buffer: AVAudioPCMBuffer) async -> [Float]? {
+        return await onnxExtractor.embed(from: buffer)
     }
 }
 
@@ -25,8 +27,23 @@ final class VoiceService {
     static let shared = VoiceService()
 
     var audioStore = FrameBasedAudioStore(maxSeconds: 60)
-    let registry = SpeakerRegistry()
+    private var _registry: SpeakerRegistry?
     let extractor = EmbeddingExtractor()
+    
+    private init() {}
+    
+    /// Initialize the speaker registry with SwiftData context
+    /// - Parameter modelContext: SwiftData model context
+    @MainActor
+    func initializeRegistry(with modelContext: ModelContext) {
+        self._registry = SpeakerRegistry(modelContext: modelContext)
+    }
+    
+    /// Access registry (must be called from main actor context)
+    @MainActor
+    var registry: SpeakerRegistry? {
+        return _registry
+    }
 
     /// Enroll a speaker from a single audio segment
     /// - Parameters:
@@ -34,15 +51,21 @@ final class VoiceService {
     ///   - startMs: Start time in milliseconds
     ///   - endMs: End time in milliseconds
     /// - Returns: True if enrollment succeeded, false otherwise
-    func enroll(name: String, startMs: Int, endMs: Int) -> Bool {
-        guard
-            let buf = audioStore.slice(
-                startMs: startMs,
-                endMs: endMs,
-            ),
-            let emb = extractor.embed(from: buf)
-        else { return false }
-        registry.enroll(name: name, embedding: emb)
+    func enroll(name: String, startMs: Int, endMs: Int) async -> Bool {
+        guard await MainActor.run(body: { self._registry != nil }) else { return false }
+        
+        guard let buf = audioStore.slice(startMs: startMs, endMs: endMs) else {
+            return false
+        }
+        
+        // Extract embedding asynchronously (prevents UI blocking)
+        guard let emb = await extractor.embed(from: buf) else {
+            return false
+        }
+        
+        await MainActor.run {
+            self._registry?.enroll(name: name, embedding: emb)
+        }
         return true
     }
     
@@ -51,7 +74,8 @@ final class VoiceService {
     ///   - name: Speaker's name
     ///   - timeRanges: Array of (start, end) time ranges in milliseconds
     /// - Returns: True if enrollment succeeded, false otherwise
-    func enrollMultipleSegments(name: String, timeRanges: [(Int, Int)]) -> Bool {
+    func enrollMultipleSegments(name: String, timeRanges: [(Int, Int)]) async -> Bool {
+        guard await MainActor.run(body: { self._registry != nil }) else { return false }
         guard !timeRanges.isEmpty else { return false }
         
         // Collect audio buffers from all segments
@@ -70,13 +94,15 @@ final class VoiceService {
             return false
         }
         
-        // Extract embedding
-        guard let emb = extractor.embed(from: concatenated) else {
+        // Extract embedding asynchronously (prevents UI blocking)
+        guard let emb = await extractor.embed(from: concatenated) else {
             return false
         }
         
         // Enroll
-        registry.enroll(name: name, embedding: emb)
+        await MainActor.run {
+            self._registry?.enroll(name: name, embedding: emb)
+        }
         return true
     }
     
@@ -90,7 +116,8 @@ final class VoiceService {
         name: String,
         timeRanges: [(Int, Int)],
         minSimilarity: Float = 0.85
-    ) -> Bool {
+    ) async -> Bool {
+        guard await MainActor.run(body: { self._registry != nil }) else { return false }
         guard !timeRanges.isEmpty else { return false }
         
         // Collect audio buffers from all segments
@@ -109,23 +136,26 @@ final class VoiceService {
             return false
         }
         
-        // Extract embedding
-        guard let emb = extractor.embed(from: concatenated) else {
+        // Extract embedding asynchronously (prevents UI blocking)
+        guard let emb = await extractor.embed(from: concatenated) else {
             return false
         }
         
         // Enroll with validation
-        return registry.enrollWithValidation(
-            name: name,
-            embedding: emb,
-            minSimilarity: minSimilarity
-        )
+        return await MainActor.run {
+            return self._registry?.enrollWithValidation(
+                name: name,
+                embedding: emb,
+                minSimilarity: minSimilarity
+            ) ?? false
+        }
     }
     
     /// Concatenate multiple audio buffers into a single buffer
     /// - Parameter buffers: Array of audio buffers to concatenate
     /// - Returns: Concatenated audio buffer, or nil if concatenation fails
     private func concatenateBuffers(_ buffers: [AVAudioPCMBuffer]) -> AVAudioPCMBuffer? {
+        let start = Date()
         guard !buffers.isEmpty else { return nil }
         
         let format = buffers[0].format
@@ -143,7 +173,7 @@ final class VoiceService {
         guard let outputData = output.floatChannelData?[0] else {
             return nil
         }
-        
+
         var offset = 0
         for buffer in buffers {
             guard let inputData = buffer.floatChannelData?[0] else { continue }
@@ -153,6 +183,9 @@ final class VoiceService {
             offset += frameCount
         }
         
+        let duration = Date().timeIntervalSince(start) * 1000
+        if duration > 10 {  // Only log if > 10ms
+        }
         return output
     }
 
@@ -161,21 +194,28 @@ final class VoiceService {
     ///   - startMs: Start time in milliseconds
     ///   - endMs: End time in milliseconds
     /// - Returns: Tuple of (speaker name, similarity score) if identified, nil otherwise
-    func identify(startMs: Int, endMs: Int) -> (String, Float)? {
-        guard
-            let buf = audioStore.slice(
-                startMs: startMs,
-                endMs: endMs,
-            ),
-            let emb = extractor.embed(from: buf)
-        else { return nil }
-        return registry.identify(embedding: emb)
+    func identify(startMs: Int, endMs: Int) async -> (String, Float)? {
+        guard await MainActor.run(body: { self._registry != nil }) else { return nil }
+        
+        guard let buf = audioStore.slice(startMs: startMs, endMs: endMs) else {
+            return nil
+        }
+        
+        // Extract embedding asynchronously (prevents UI blocking)
+        guard let emb = await extractor.embed(from: buf) else {
+            return nil
+        }
+        
+        return await MainActor.run {
+            return self._registry?.identify(embedding: emb)
+        }
     }
     
     /// Identify a speaker from multiple concatenated audio segments
     /// - Parameter timeRanges: Array of (start, end) time ranges in milliseconds
     /// - Returns: Tuple of (speaker name, similarity score) if identified, nil otherwise
-    func identifyMultipleSegments(timeRanges: [(Int, Int)]) -> (String, Float)? {
+    func identifyMultipleSegments(timeRanges: [(Int, Int)]) async -> (String, Float)? {
+        guard await MainActor.run(body: { self._registry != nil }) else { return nil }
         guard !timeRanges.isEmpty else { return nil }
         
         // Collect audio buffers from all segments
@@ -193,13 +233,15 @@ final class VoiceService {
         guard let concatenated = concatenateBuffers(buffers) else {
             return nil
         }
-        
-        // Extract embedding
-        guard let emb = extractor.embed(from: concatenated) else {
+
+        // Extract embedding asynchronously (prevents UI blocking)
+        guard let emb = await extractor.embed(from: concatenated) else {
             return nil
         }
         
         // Identify
-        return registry.identify(embedding: emb)
+        return await MainActor.run {
+            return self._registry?.identify(embedding: emb)
+        }
     }
 }

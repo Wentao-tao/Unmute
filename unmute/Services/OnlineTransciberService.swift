@@ -76,7 +76,7 @@ final class OnlineTransciberService {
         {
             task?.send(.string(jsonString)) { err in
                 if let err {
-                    print("Error sending config: \(err)")
+                    print("❌ Error sending config: \(err)")
                 }
             }
         }
@@ -127,7 +127,7 @@ final class OnlineTransciberService {
             switch result {
             case .failure(let error):
                 // Connection failed or was closed
-                print("WebSocket receive error: \(error)")
+                print("❌ WebSocket receive error: \(error)")
                 return
 
             case .success(let message):
@@ -159,13 +159,12 @@ final class OnlineTransciberService {
 
         // Check for error responses
         if let errorCode = obj["error_code"] as? Int {
-            print("Transcription service error code: \(errorCode)")
+            print("❌ Transcription service error code: \(errorCode)")
             return
         }
 
         // Check if transcription has finished
         if let finished = obj["finished"] as? Bool, finished {
-            print("Transcription session finished")
             return
         }
 
