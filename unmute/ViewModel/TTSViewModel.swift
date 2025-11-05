@@ -14,11 +14,13 @@ final class TTsViewModel {
     
     /// Speak the given text
     /// - Parameter text: The text to be spoken
+    @MainActor
     func speak(_ text: String) {
         speaker.speak(text: text)
     }
     
     /// Stop speaking immediately
+    @MainActor
     func stop() {
         speaker.stop()
     }

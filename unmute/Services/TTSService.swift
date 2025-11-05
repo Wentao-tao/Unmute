@@ -20,35 +20,24 @@ final class TTSService: NSObject, @unchecked Sendable, AVSpeechSynthesizerDelega
     
     /// Speak the given text using Text-to-Speech
     /// - Parameter text: The text to be spoken
+    @MainActor
     func speak(text: String) {
         guard !text.trimmingCharacters(in: .whitespaces).isEmpty else {
             return
         }
         
-        // AVSpeechSynthesizer must be called on main thread
-        Task { @MainActor in
-            // Activate audio session for playback
-            do {
-                let session = AVAudioSession.sharedInstance()
-                try session.setCategory(.playback, mode: .spokenAudio, options: [])
-                try session.setActive(true)
-            } catch {
-                print("❌ TTS: Failed to configure audio session: \(error)")
-            }
-            
-            let speech = AVSpeechUtterance(string: text)
-            speech.voice = AVSpeechSynthesisVoice(language: "en-US")
-            speech.rate = 0.5
-            speech.pitchMultiplier = 1.0
-            self.speaker.speak(speech)
-        }
+        // AVSpeechSynthesizer automatically manages audio session
+        let speech = AVSpeechUtterance(string: text)
+        speech.voice = AVSpeechSynthesisVoice(language: "en-US")
+        speech.rate = 0.5
+        speech.pitchMultiplier = 1.0
+        speaker.speak(speech)
     }
     
     /// Stop speaking immediately
+    @MainActor
     func stop() {
-        Task { @MainActor in
-            speaker.stopSpeaking(at: .immediate)
-        }
+        speaker.stopSpeaking(at: .immediate)
     }
     
     // MARK: - AVSpeechSynthesizerDelegate
