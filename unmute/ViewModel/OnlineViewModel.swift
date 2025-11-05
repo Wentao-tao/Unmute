@@ -401,13 +401,17 @@ final class OnlineViewModel {
             
             let currentIndex = self.finalLines.name.indices.last
             
-            // Strategy 1: Use existing mapping if available
+            // Strategy 1: If mapping exists, verify with voice recognition
             if let mappedName = self.speakerMapping[speaker] {
                 if let index = currentIndex, index < self.finalLines.name.count {
-                    self.finalLines.name[index] = mappedName
-                }
-                Task.detached {
-                    await self.autoLearnIfReady(speaker: speaker, name: mappedName)
+                    // Verify the speaker with voice recognition
+                    Task.detached {
+                        await self.verifyMappedSpeaker(
+                            speaker: speaker, 
+                            mappedName: mappedName, 
+                            currentIndex: index
+                        )
+                    }
                 }
                 return
             }
@@ -423,6 +427,62 @@ final class OnlineViewModel {
             // Strategy 3: Handle new speaker (attempt identification)
             Task.detached {
                 await self.handleNewSpeaker(speaker: speaker, currentIndex: currentIndex)
+            }
+        }
+    }
+    
+    /// Verifies if the current audio segment matches the mapped speaker
+    /// If not, uses default label instead
+    /// - Parameters:
+    ///   - speaker: Sonix speaker ID
+    ///   - mappedName: Previously mapped name for this speaker
+    ///   - currentIndex: Current index in finalLines
+    private func verifyMappedSpeaker(speaker: Int, mappedName: String, currentIndex: Int) async {
+        let timeRanges = collectSpeakerSegments(speakerId: speaker)
+        
+        // Only verify if we have enough audio (at least 2 seconds for quick check)
+        let totalDuration = timeRanges.reduce(0) { $0 + ($1.1 - $1.0) }
+        
+        if totalDuration >= 2000 {
+            // Perform voice identification
+            let result = await VoiceService.shared.identifyMultipleSegments(timeRanges: timeRanges)
+            
+            await MainActor.run {
+                if let (identifiedName, score) = result {
+                    // Check if identified name matches the mapped name
+                    if identifiedName == mappedName && score >= 0.75 {
+                        // Match confirmed - use mapped name
+                        if currentIndex < self.finalLines.name.count {
+                            self.finalLines.name[currentIndex] = mappedName
+                        }
+                        
+                        // Auto-learn if enabled
+                        Task.detached {
+                            await self.autoLearnIfReady(speaker: speaker, name: mappedName)
+                        }
+                    } else {
+                        // Mismatch or low score - use default label
+                        let defaultLabel = "Speaker \(speaker)"
+                        if currentIndex < self.finalLines.name.count {
+                            self.finalLines.name[currentIndex] = defaultLabel
+                        }
+                        print("⚠️ Speaker verification failed: Expected '\(mappedName)' but got '\(identifiedName)' (score: \(String(format: "%.2f", score))). Using default label.")
+                    }
+                } else {
+                    // No match found - use default label
+                    let defaultLabel = "Speaker \(speaker)"
+                    if currentIndex < self.finalLines.name.count {
+                        self.finalLines.name[currentIndex] = defaultLabel
+                    }
+                    print("⚠️ No speaker match found for verification. Using default label.")
+                }
+            }
+        } else {
+            // Not enough audio yet - temporarily use mapped name
+            await MainActor.run {
+                if currentIndex < self.finalLines.name.count {
+                    self.finalLines.name[currentIndex] = mappedName
+                }
             }
         }
     }
