@@ -106,8 +106,6 @@ final class ONNXEmbeddingExtractor: @unchecked Sendable {
     /// - Parameter buffer: 16kHz mono audio buffer
     /// - Returns: L2-normalized embedding vector, or nil if extraction fails
     private func performInference(buffer: AVAudioPCMBuffer) -> [Float]? {
-        let start = Date()
-        
         guard let session = session else {
             return nil
         }
@@ -116,9 +114,6 @@ final class ONNXEmbeddingExtractor: @unchecked Sendable {
         guard let fbank = fbankExtractor?.makeFbank(from16kMono: buffer) else {
             return nil
         }
-        
-        let fbankTime = Date().timeIntervalSince(start) * 1000
-        let inferenceStart = Date()
         
         let nMels = fbank.count       // 80
         let nFrames = fbank[0].count  // Dynamic length

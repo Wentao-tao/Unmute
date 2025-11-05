@@ -39,16 +39,12 @@ public final class AvAudioService {
     public func start() async throws -> AsyncStream<AudioFrame> {
         guard !isRunning else { return makeStream() }
 
-        let startTime = Date()
-        
         // Run audio setup on a background thread to avoid blocking main thread
         try await Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { throw NSError(domain: "AvAudioService", code: -1) }
             try self.setupAudioSession()
             try self.configureEngineAndTap()
         }.value
-        
-        let setupTime = Date().timeIntervalSince(startTime) * 1000
         
         isRunning = true
         return makeStream()
