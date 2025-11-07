@@ -79,6 +79,7 @@ struct TestView: View {
                 TextField("ENTER TEXT HERE", text: $text)
                     .textFieldStyle(.roundedBorder)
                     .padding(.horizontal)
+                    
                 HStack(spacing: 16) {
                     Button("SPEAK") {
                         tts.speak(text)
