@@ -14,7 +14,7 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             VStack {
-                TestView()
+                HomeView()
             }
             .padding()
             .navigationTitle("Speech Recognition")
