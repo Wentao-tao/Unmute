@@ -38,11 +38,16 @@ struct SpeakerData: Identifiable {
     ]
 
     static func create(name: String, message: String) -> SpeakerData {
-        SpeakerData(
+        // Use name's hash to generate consistent symbol and color
+        let hash = abs(name.hashValue)
+        let symbolIndex = hash % availableSymbols.count
+        let colorIndex = hash % availableColors.count
+        
+        return SpeakerData(
             name: name,
             message: message,
-            symbol: availableSymbols.randomElement() ?? "person.fill",
-            color: availableColors.randomElement() ?? .violet6
+            symbol: availableSymbols[symbolIndex],
+            color: availableColors[colorIndex]
         )
     }
 

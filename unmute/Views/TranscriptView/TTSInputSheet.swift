@@ -6,12 +6,14 @@
 //
 
 import SwiftUI
+import Foundation
 
 struct TTSInputSheet: View {
     @Binding var isTTsOn: Bool
     @State private var inputText: String = ""
+    @State private var ttsVM = TTSViewModel()
 
-    var onPlay: (String) -> Void
+
 
     var body: some View {
         GeometryReader { geo in
@@ -65,7 +67,7 @@ struct TTSInputSheet: View {
 
     private func playTTS() {
         guard !inputText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        onPlay(inputText)
+        ttsVM.speak(inputText)
         withAnimation { isTTsOn = false }
     }
 }
@@ -80,9 +82,7 @@ struct TTSInputSheet: View {
             .onTapGesture { withAnimation { isTTsOn = false } }
             .zIndex(3)
 
-        TTSInputSheet(isTTsOn: $isTTsOn) { text in
-            print("🎧 TTS triggered with:", text)
-        }
+        TTSInputSheet(isTTsOn: $isTTsOn)
         .zIndex(4)
         .frame(maxHeight: .infinity, alignment: .bottom)
     }

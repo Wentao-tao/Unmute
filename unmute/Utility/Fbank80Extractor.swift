@@ -71,7 +71,7 @@ final class Fbank80Extractor {
         let nHop = Int(p.hopMs * p.sr / 1000.0)   // 160
         let nFft = p.nFft                         // 512
         let half  = nFft / 2                      // 256
-
+  
         // Extract audio data
         let x = Array(UnsafeBufferPointer(start: buf.floatChannelData![0],
                                           count: Int(buf.frameLength)))
@@ -140,7 +140,7 @@ final class Fbank80Extractor {
             // 2. Subtract mean (only this step!)
             var negMean = -mean
             vDSP_vsadd(feats[c], 1, &negMean, &feats[c], 1, vDSP_Length(nFrames))
-            
+
             // Do NOT divide by standard deviation (std_norm=False)
             // Do NOT clip values
             // Expected result: mean≈0, std≈3-11, range≈[-60, 40]

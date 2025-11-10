@@ -9,7 +9,7 @@ import Foundation
 
 /// ViewModel for Text-to-Speech functionality
 @Observable
-final class TTsViewModel {
+final class TTSViewModel {
     private let speaker = TTSService()
     
     /// Speak the given text

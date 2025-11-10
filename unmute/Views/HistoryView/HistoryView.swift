@@ -5,12 +5,19 @@
 //  Created by Babe on 07/11/25.
 //
 
+import SwiftData
 import SwiftUI
 
 struct HistoryView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \TranscriptionSession.sessionDate, order: .reverse) private
+        var sessions: [TranscriptionSession]
     @State private var searchText: String = ""
     @State private var histories: [TranscriptHistory] = []
+    
+    // Track selected session for navigation
+    @State private var selectedSession: TranscriptionSession?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,8 +61,11 @@ struct HistoryView: View {
             // MARK: - Transcript History List
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 16) {
-                    ForEach(filteredHistories) { history in
-                        TranscriptHistoryCardEditable(history: binding(for: history))
+                    ForEach(filteredSessions) { session in
+                        SessionHistoryCard(session: session) {
+                            // Navigate to detail view when card is tapped (not in editing mode)
+                            selectedSession = session
+                        }
                     }
                 }
                 .padding(.horizontal, 20)
@@ -67,8 +77,11 @@ struct HistoryView: View {
         .background(
             LinearGradient(
                 stops: [
-                    .init(color: Color(red: 0.95, green: 0.95, blue: 1.0), location: 0.05),
-                    .init(color: .white, location: 0.42)
+                    .init(
+                        color: Color(red: 0.95, green: 0.95, blue: 1.0),
+                        location: 0.05
+                    ),
+                    .init(color: .white, location: 0.42),
                 ],
                 startPoint: UnitPoint(x: 0.5, y: -0.16),
                 endPoint: UnitPoint(x: 0.5, y: 1.2)
@@ -77,7 +90,9 @@ struct HistoryView: View {
         )
         .navigationBarHidden(true)
         .toolbar(.hidden, for: .navigationBar)
-        .onAppear(perform: loadDummyHistory)
+        .navigationDestination(item: $selectedSession) { session in
+            SessionDetailView(session: session)
+        }
     }
 
     // MARK: - Computed Filtered Data
@@ -90,28 +105,25 @@ struct HistoryView: View {
             }
         }
     }
-    
-    // Helper to get a binding to an element in histories array
-    private func binding(for history: TranscriptHistory) -> Binding<TranscriptHistory> {
-        guard let index = histories.firstIndex(where: { $0.id == history.id }) else {
-            fatalError("History not found")
+
+    private var filteredSessions: [TranscriptionSession] {
+        if searchText.isEmpty {
+            return sessions
+        } else {
+            return sessions.filter {
+                $0.sessionTitle.localizedCaseInsensitiveContains(searchText)
+            }
         }
-        return $histories[index]
     }
 
     // MARK: - Functions
-    private func loadDummyHistory() {
-        histories = [
-            TranscriptHistory(title: "Team Meeting Recap", date: Date().addingTimeInterval(-3600)),
-            TranscriptHistory(title: "Interview with Client", date: Date().addingTimeInterval(-86400)),
-            TranscriptHistory(title: "Design Sprint Discussion", date: Date().addingTimeInterval(-172800)),
-            TranscriptHistory(title: "AI Research Sync", date: Date().addingTimeInterval(-259200))
-        ]
-    }
 
     private func deleteAllHistories() {
         withAnimation {
-            histories.removeAll()
+            for session in sessions {
+                modelContext.delete(session)
+            }
+            try? modelContext.save()
         }
     }
 }

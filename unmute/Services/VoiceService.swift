@@ -65,7 +65,7 @@ final class VoiceService {
         
         await MainActor.run {
             self._registry?.enroll(name: name, embedding: emb)
-        }
+    }
         return true
     }
     
@@ -77,7 +77,7 @@ final class VoiceService {
     func enrollMultipleSegments(name: String, timeRanges: [(Int, Int)]) async -> Bool {
         guard await MainActor.run(body: { self._registry != nil }) else { return false }
         guard !timeRanges.isEmpty else { return false }
-        
+
         // Collect audio buffers from all segments
         var buffers: [AVAudioPCMBuffer] = []
         
@@ -226,7 +226,7 @@ final class VoiceService {
                 buffers.append(buf)
             }
         }
-        
+
         guard !buffers.isEmpty else { return nil }
         
         // Concatenate all buffers

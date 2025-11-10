@@ -53,6 +53,7 @@ final class TranscriptionSession {
 }
 
 /// In-memory model for current transcription session
+@Observable
 class TranscriberModel {
     
     // MARK: - Properties

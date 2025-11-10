@@ -15,8 +15,8 @@ struct HomeView: View {
                 HStack{
                     Spacer()
                     FloatingHeaderBar(
-                        onHistory: { navPath.append("History") },
-                        onSettings: { navPath.append("Settings") }
+                        onHistory: { navPath.append(NavigationDestination.history) },
+                        onSettings: { navPath.append(NavigationDestination.settings) }
                     )
                     .padding(.horizontal, 20)
                     .padding(.bottom)
@@ -31,7 +31,7 @@ struct HomeView: View {
                 
                 Spacer()
                 
-                NavigationLink(value: "LiveTranscription") {
+                NavigationLink(value: NavigationDestination.liveTranscription) {
                     VStack{
                         Image(systemName: "microphone.circle.fill")
                             .resizable()
@@ -59,18 +59,21 @@ struct HomeView: View {
                 .ignoresSafeArea()
             )
 
-            .navigationDestination(for: String.self) { value in
-                switch value {
-                case "LiveTranscription":
+            .navigationDestination(for: NavigationDestination.self) { destination in
+                switch destination {
+                case .liveTranscription:
                     LiveTranscriptionView(navPath: $navPath)
-                case "SummaryTranscript":
-                    SummaryTranscriptView(navPath: $navPath)
-                case "History":
+                case .summaryTranscript(let lines, let names, let ids):
+                    SummaryTranscriptView(
+                        navPath: $navPath,
+                        transcriptionLines: lines,
+                        speakerNames: names,
+                        speakerIds: ids
+                    )
+                case .history:
                     HistoryView()
-                case "Settings":
+                case .settings:
                     SettingView()
-                default:
-                    EmptyView()
                 }
             }
             .navigationBarHidden(true)

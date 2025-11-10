@@ -10,6 +10,9 @@ import SwiftUI
 struct LabelSpeaker: View {
     @Binding var isRename: Bool
     @State private var inputText: String = "" // will be move on the model view
+    var onSave: (String) -> Void = { _ in }
+    
+    
     var body: some View {
         VStack(alignment: .leading) {
             Text("Label Speaker")
@@ -38,7 +41,11 @@ struct LabelSpeaker: View {
             
             HStack(spacing: 20) {
                 AlertButton(type: .cancel,action: { isRename.toggle() })
-                AlertButton(type: .continueButton,action: { isRename.toggle() })
+                AlertButton(type: .continueButton,action: {
+                    if !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        onSave(inputText)
+                    }
+                    isRename.toggle() })
             }
             .frame(maxWidth: .infinity)
             .multilineTextAlignment(.center)

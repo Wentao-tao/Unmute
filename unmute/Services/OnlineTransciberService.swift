@@ -52,6 +52,9 @@ final class OnlineTransciberService {
     private let url = URL(
         string: "wss://stt-rt.soniox.com/transcribe-websocket"
     )!
+    
+    /// Timer for sending keepalive messages to maintain WebSocket connection
+    private var keepaliveTimer: Timer?
 
     // MARK: - Public Methods
     
@@ -100,20 +103,62 @@ final class OnlineTransciberService {
 
     /// Sends a keepalive message to maintain the WebSocket connection.
     func keepalive() {
+        // Check if WebSocket is still connected
+        guard let task = task, task.state == .running else {
+            print("⚠️ WebSocket not connected, stopping keepalive")
+            stopKeepalive()
+            return
+        }
+        
         let msg = try! JSONSerialization.data(withJSONObject: [
             "type": "keepalive"
         ])
         if let msgString = String(data: msg, encoding: .utf8) {
-            task?.send(.string(msgString)) { _ in }
+            task.send(.string(msgString)) { [weak self] error in
+                if let error = error {
+                    print("❌ Keepalive send failed: \(error)")
+                    self?.stopKeepalive()
+                }
+            }
         }
+    }
+    
+    /// Starts periodic keepalive messages to maintain WebSocket connection during pause.
+    /// Sends keepalive every 15 seconds (below the 20-second timeout limit).
+    func startKeepalive() {
+        // Stop any existing timer
+        stopKeepalive()
+        
+        // Schedule timer to send keepalive every 15 seconds
+        keepaliveTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in
+            self?.keepalive()
+        }
+        
+        // Ensure timer runs on main thread
+        if let timer = keepaliveTimer {
+            RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+    
+    /// Stops the keepalive timer.
+    func stopKeepalive() {
+        keepaliveTimer?.invalidate()
+        keepaliveTimer = nil
     }
 
     /// Closes the WebSocket connection and releases resources.
     func close() {
+        // Stop keepalive timer when closing connection
+        stopKeepalive()
+        
         // Send empty data frame to signal end
         task?.send(.data(Data())) { _ in }
         // Cancel the WebSocket task
         task?.cancel(with: .goingAway, reason: nil)
+    }
+    
+    deinit {
+        stopKeepalive()
     }
 
     // MARK: - Private Methods
@@ -128,6 +173,9 @@ final class OnlineTransciberService {
             case .failure(let error):
                 // Connection failed or was closed
                 print("❌ WebSocket receive error: \(error)")
+                
+                // Stop keepalive timer when connection fails
+                self.stopKeepalive()
                 return
 
             case .success(let message):

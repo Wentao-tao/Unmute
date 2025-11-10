@@ -49,7 +49,7 @@ final class SpeakerRegistry: ObservableObject {
         }
         save()
     }
-    
+
     /// Enroll a speaker with quality validation (used for auto-learning to prevent voiceprint contamination)
     /// - Parameters:
     ///   - name: Speaker's name
@@ -102,14 +102,14 @@ final class SpeakerRegistry: ObservableObject {
         for p in profiles {
             let scores = p.embeddings.map { cosine($0, embedding) }
             let s = scores.max() ?? -1
-            
+
             if best == nil || s > best!.1 { best = (p.name, s) }
         }
         
         if let b = best {
             if b.1 >= threshold {
-                return b
-            }
+        return b
+    }
         }
         
         return nil

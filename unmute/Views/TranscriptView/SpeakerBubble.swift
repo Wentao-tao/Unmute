@@ -13,7 +13,12 @@ struct SpeakerBubble: View {
     let name: String
     let message: String
     let color: Color
+    let speakerID: Int
     @Binding var isRename: Bool
+    
+    var onRename: (Int) -> Void
+    
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
@@ -28,6 +33,7 @@ struct SpeakerBubble: View {
                 
                 Button(action: {
                     isRename.toggle()
+                    onRename(speakerID)
                 }) {
                     Image(systemName: "pencil.line")
                         .font(.system(size: 16, weight: .semibold))
@@ -58,7 +64,8 @@ struct SpeakerBubble: View {
         name: "Alice",
         message: "This is a sample message shown inside the speaker bubble to preview the layout and styling.",
         color: .violet8,
-        isRename: $isRename
+        speakerID: 1,
+        isRename: $isRename, onRename: {id in }
     )
     .padding()
 }
