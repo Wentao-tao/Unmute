@@ -135,6 +135,14 @@ struct LiveTranscriptionView: View {
             timer?.invalidate()
             timer = nil
         }
+        .onAppear {
+            if !transcriptionVM.isRunning {
+                Task {
+                    await startTranscription()
+                    isRunning = true
+                }
+            }
+        }
 
     }
 

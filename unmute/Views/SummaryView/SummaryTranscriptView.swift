@@ -26,7 +26,7 @@ struct SummaryTranscriptView: View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                RoundButton(type: .back, isGlass: true) { 
+                RoundButton(type: .back, isGlass: true) {
                     navPath.removeLast(navPath.count)
                 }
                 
@@ -69,60 +69,53 @@ struct SummaryTranscriptView: View {
             .padding(.horizontal, 20)
             .padding(.top, 10)
             .padding(.bottom, 8)
-            
-            // Transcript Lines
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 20) {
-                    ForEach(Array(transcriptionLines.enumerated()), id: \.offset) { index, line in
-                        let name = speakerNames.indices.contains(index) ? speakerNames[index] : "Unknown"
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Image(systemName: "person.fill")
-                                    .font(.system(size: 14))
-                                    .foregroundColor(.violet6)
-                                
-                                Text(name)
-                                    .font(.system(.subheadline, design: .rounded))
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.violet8)
-                            }
+
+            ZStack(alignment: .bottom) {
+                // Transcript Lines
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 20) {
+                        ForEach(Array(transcriptionLines.enumerated()), id: \.offset) { index, line in
+                            let name = speakerNames.indices.contains(index) ? speakerNames[index] : "Unknown"
                             
-                            Text(line)
-                                .font(.system(.body, design: .rounded))
-                                .foregroundColor(.violet8.opacity(0.9))
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Image(systemName: "person.fill")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.violet6)
+                                    
+                                    Text(name)
+                                        .font(.system(.subheadline, design: .rounded))
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.violet8)
+                                }
+                                
+                                Text(line)
+                                    .font(.system(.body, design: .rounded))
+                                    .foregroundColor(.violet8.opacity(0.9))
+                            }
+                            .padding()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(Color.white)
+                                    .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+                            )
                         }
-                        .padding()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(Color.white)
-                                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-                        )
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 20)
+                }
+
+                HStack(spacing: 20) {
+                    LiquidGlassButton(type: .summarize) {
+                        isSummarize.toggle()
+                    }
+                    
+                    RoundButton(type: .cancel) {
+                        navPath.removeLast(navPath.count)
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 20)
             }
-            
-            // Bottom button bar
-            HStack(spacing: 20) {
-                LiquidGlassButton(type: .summarize) {
-                    isSummarize.toggle()
-                }
-                
-                RoundButton(type: .cancel) {
-                    navPath.removeLast(navPath.count)
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 20)
-            .background(
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .black.opacity(0.1), radius: 4, y: -1)
-                    .ignoresSafeArea(edges: .bottom)
-            )
         }
         .background(
             LinearGradient(
@@ -147,8 +140,8 @@ struct SummaryTranscriptView: View {
             TranscriptSummarySheet(
                 isVisible: $isSummarize,
                 title: transcriptTitle,
-                date: Date().formatted(date: .abbreviated, time: .omitted),
-                speakerCount: Set(speakerNames).count,
+                date: "Nov 7, 2025",
+                speakerCount: speakers.count,
                 summaryText: """
                 The discussion focused on improving workflow efficiency, resolving communication issues, and aligning team goals for the next sprint.
                 """,
@@ -157,13 +150,24 @@ struct SummaryTranscriptView: View {
                     "Speaker 2 proposed adopting automation tools.",
                     "Speaker 3 highlighted collaboration improvements."
                 ],
-                conclusion: "The team decided to adopt a shared planning tool and review its effectiveness next week."
+                conclusion: "The team decided to adopt a shared planning tool and review its effectiveness next week.",
+                onShare: { url in          // 👈 Add this
+                    exportedURL = url
+                    showShareSheet = true
+                }
             )
             .presentationCornerRadius(34)
             .presentationBackgroundInteraction(.enabled)
             .interactiveDismissDisabled(false)
         }
-
+        .onChange(of: showShareSheet) { oldValue, newValue in
+            print("🔄 showShareSheet changed to: \(newValue)")  // Add this
+            if newValue, let url = exportedURL {
+                print("🔄 presenting share sheet")             // Add this
+                presentShareSheet(with: [url])
+                showShareSheet = false
+            }
+        }
     }
     
     private var formattedDate: String {

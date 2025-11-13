@@ -93,7 +93,7 @@ struct LiquidGlassButton: View {
                 if let title = type.title {
                     Text(title)
                         .font(.system(.body, design: .rounded))
-                        .fontWeight(type.fontWeight) // 👈 dynamic weight based on background
+                        .fontWeight(type.fontWeight) 
                 }
             }
             .frame(width: type.frameSize.width, height: type.frameSize.height)

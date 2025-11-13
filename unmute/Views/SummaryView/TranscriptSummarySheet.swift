@@ -43,7 +43,22 @@ struct TranscriptSummarySheet: View {
                 Spacer()
                 
                 RoundButton(type: .share, isGlass: true) {
-                    print("📄 Export summary...")
+                    if let url = PDFExporter.exportPDF(content: {
+                        TranscriptSummaryPrintableView(
+                            title: title,
+                            date: date,
+                            speakerCount: speakerCount,
+                            summaryText: summaryText,
+                            keyPoints: keyPoints,
+                            conclusion: conclusion
+                        )
+                    }) {
+                        isVisible = false
+
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                            onShare?(url)
+                        }
+                    }
                 }
                 .frame(width: 44, height: 44)
             }
@@ -60,7 +75,7 @@ struct TranscriptSummarySheet: View {
                 Label("\(speakerCount) speakers", systemImage: "person.3.fill")
             }
             .font(.system(.callout, design: .rounded))
-            .foregroundColor(.violet5)
+            .foregroundColor(.secondary)
             .padding(.horizontal, 20)
             
             // Summary Section

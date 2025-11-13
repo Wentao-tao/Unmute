@@ -12,10 +12,17 @@ struct TranscriptHistoryCardEditable: View {
     @Binding var history: TranscriptHistory
     @State private var isEditing = false
     @FocusState private var isTextFieldFocused: Bool
-
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
+                if editMode {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.title2)
+                        .foregroundColor(isSelected ? .violet4 : .violet4)
+                        .padding(10)
+                        .transition(.scale.combined(with: .opacity))
+                }
                 if isEditing {
                     TextField("Enter title", text: $history.title)
                         .textFieldStyle(.plain)

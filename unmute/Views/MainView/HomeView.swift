@@ -23,24 +23,36 @@ struct HomeView: View {
                 }
                 
                 
-
-                Text("Ready to start transcribing, [name]?")
+                Text("Ready to start")
                     .font(.title)
-                    .fontWeight(.bold)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.violet7)
+                    .frame(maxWidth: .infinity, alignment: .init(horizontal: .leading, vertical: .center))
                     .padding(.top, 8)
+                    .padding(.horizontal)
+                Text("transcribing?")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.violet5)
+                    .frame(maxWidth: .infinity, alignment: .init(horizontal: .leading, vertical: .center))
+                    .padding(.horizontal)
                 
                 Spacer()
                 
                 NavigationLink(value: NavigationDestination.liveTranscription) {
                     VStack{
-                        Image(systemName: "microphone.circle.fill")
+                        Image(systemName: "microphone.fill")
                             .resizable()
-                            .frame(width: 144, height: 144)
-                            .foregroundStyle(.black)
-                            .padding(.bottom, 20)
+                            .frame(width: 64, height: 81)
+                            .foregroundStyle(.yellow3)
+                            .padding(50)
+                            .background(Color(.violet7))
+                            .clipShape(Circle())
                         Text("Tap to start")
                             .font(.callout)
-                            .foregroundStyle(.white7)
+                            .fontWeight(.semibold)
+                            .padding(.top, 5)
+                            .foregroundStyle(.violet1)
 
                     }
                 }

@@ -74,13 +74,8 @@ struct FloatingControlBar: View {
                 .shadow(color: state.shadow.color, radius: state.shadow.radius, x: 0, y: 0)
             
             RoundedRectangle(cornerRadius: 1000, style: .continuous)
-                .fill(Color.white)
+                .fill(Color.black.opacity(0.04))
                 .glassEffect(in: RoundedRectangle(cornerRadius: 1000))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 1000)
-                        .strokeBorder(Color.white.opacity(0.3), lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 3)
             
             HStack(spacing: 65) {
                 Button {

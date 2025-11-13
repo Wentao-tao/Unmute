@@ -36,14 +36,14 @@ struct FloatingHeaderBar: View {
                 Button(action: onHistory){
                     Image(systemName: "hourglass")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.violet7)
+                        .foregroundStyle(.violet4)
                 }
                 .buttonStyle(.plain)
                 .padding(.trailing, 12)
                 Button(action: onSettings) {
-                    Image(systemName: "gearshape.fill")
+                    Image(systemName: "person.wave.2.fill")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.violet7)
+                        .foregroundStyle(.violet4)
                 }
                 .buttonStyle(.plain)
             }

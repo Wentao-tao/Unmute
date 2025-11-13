@@ -15,7 +15,9 @@ struct SpeakerBubble: View {
     let color: Color
     let speakerID: Int
     @Binding var isRename: Bool
-    
+    var isQuestion: Bool {
+        message.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?")
+    }
     var onRename: (Int) -> Void
     
     
@@ -39,10 +41,6 @@ struct SpeakerBubble: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(color)
                         .padding(8)
-                        .background(
-                            Circle()
-                                .fill(Color.white.opacity(0.2))
-                        )
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -51,7 +49,12 @@ struct SpeakerBubble: View {
             
             Text(message)
                 .font(.system(.body, design: .rounded))
-                .foregroundStyle(.violet8.opacity(0.95))
+                .foregroundStyle(isQuestion ? .yellow0 : .violet8.opacity(0.95))
+                .padding(isQuestion ? 15 : 0)
+                .background(
+                     RoundedRectangle(cornerRadius: 16, style: .continuous)
+                         .fill(isQuestion ? Color.violet4 : .clear)
+                 )
         }
     }
 }

@@ -15,7 +15,9 @@ struct HistoryView: View {
         var sessions: [TranscriptionSession]
     @State private var searchText: String = ""
     @State private var histories: [TranscriptHistory] = []
-    
+    @State private var editMode: Bool = false
+    @State private var selectedIDs: Set<UUID> = []
+    @State private var showDeleteConfirmation: Bool = false
     // Track selected session for navigation
     @State private var selectedSession: TranscriptionSession?
 
@@ -33,8 +35,17 @@ struct HistoryView: View {
 
                 Spacer()
 
-                RoundButton(type: .trash) {
-                    deleteAllHistories()
+                RoundButton(type: editMode ? .correct : .trash) {
+                    withAnimation(.spring()) {
+                        if editMode {
+                            histories.removeAll { selectedIDs.contains($0.id) }
+                            selectedIDs.removeAll()
+                            editMode = false
+                        } else {
+                            // Enter edit mode
+                            editMode = true
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 20)

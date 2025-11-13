@@ -69,13 +69,9 @@ struct FloatingTimer: View {
                 .shadow(color: state.shadow.color, radius: state.shadow.radius, x: 0, y: 0)
       
             RoundedRectangle(cornerRadius: 1000, style: .continuous)
-                .fill(Color.white)
+                .fill(Color.black.opacity(0.04))
                 .glassEffect(in: RoundedRectangle(cornerRadius: 1000))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 1000)
-                        .strokeBorder(Color.white.opacity(0.3), lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 3)
+            
             
             VStack(spacing: 2) {
                 HStack(spacing: 8) {
@@ -87,21 +83,6 @@ struct FloatingTimer: View {
             }
         }
         .frame(width: 353, height: 44)
-        .overlay(
-            RoundedRectangle(cornerRadius: 1000)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            .white.opacity(0.15),
-                            .clear
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .blendMode(.overlay)
-        )
-        .animation(.easeInOut(duration: 0.4), value: isRunning)
     }
     
     func formatTime(_ interval: TimeInterval) -> String {
